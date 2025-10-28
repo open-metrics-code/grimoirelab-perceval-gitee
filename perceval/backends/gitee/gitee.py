@@ -24,7 +24,7 @@
 
 import json
 import logging
-
+import base64
 import requests
 from grimoirelab_toolkit.datetime import (datetime_to_utc,
                                           str_to_datetime, datetime_utcnow)
@@ -444,7 +444,8 @@ class Gitee(Backend):
 
         raw_repo = self.client.repo()
         repo = json.loads(raw_repo)
-
+        
+        # repo releases
         repo_releases_groups = self.client.repo_releases()
         repo_releases = []
         for raw_releases in repo_releases_groups:
@@ -453,6 +454,26 @@ class Gitee(Backend):
                repo_releases.append(release) 
             
         repo['releases'] = repo_releases
+
+        # repo branches
+        repo_branches_groups = self.client.repo_branches()
+        repo_branches = []
+        for raw_branches in repo_branches_groups:
+            branches = json.loads(raw_branches)
+            for branch in branches:
+                repo_branches.append(branch) 
+            
+        repo['branches'] = repo_branches 
+
+        # repo readme
+        repo_readme = self.client.repo_readme()
+        if repo_readme.get("content"):
+            try:
+                repo['readme_content'] = base64.b64decode(repo_readme.get("content")).decode('utf-8')
+            except Exception as e:
+                repo['readme_content'] = None
+        else:
+            repo['readme_content'] = None
 
         fetched_on = datetime_utcnow()
         repo['fetched_on'] = fetched_on.timestamp()
@@ -808,6 +829,33 @@ class GiteeClient(HttpClient, RateLimitHandler):
         path = urijoin('releases')
     
         return self.fetch_items(path, payload)
+
+    def repo_branches(self):
+        """Get repository branches data"""
+
+        payload = {
+            'per_page': PER_PAGE,
+            'direction': 'desc',
+            'sort': 'updated'
+        }
+
+        path = urijoin('branches')
+    
+        return self.fetch_items(path, payload)
+
+    
+    def repo_readme(self):
+        """Get repository readme data"""
+
+        path = urijoin(self.base_url, 'repos', self.owner, self.repository, 'readme')
+        try:
+            r = self.fetch(path)
+            readme = r.text
+            readme_json = json.loads(readme)
+        except Exception as e:
+            readme_json = {}
+        return readme_json
+        
 
     def pull_action_logs(self, pr_number):
         """Get pull request action logs"""
